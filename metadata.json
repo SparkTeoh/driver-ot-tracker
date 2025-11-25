@@ -1,0 +1,5 @@
+{
+  "name": "Driver OT Tracker",
+  "description": "A mobile-first application to track driver working hours and calculate overtime pay based on specific business rules.",
+  "requestFramePermissions": []
+}
