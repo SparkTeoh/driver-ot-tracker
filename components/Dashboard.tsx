@@ -11,6 +11,7 @@ import {
 } from '../services/timeService';
 import { WorkLog } from '../types';
 import Timer from './Timer';
+import WorkLogDetail from './WorkLogDetail';
 
 interface DashboardProps {
   session: any;
@@ -23,6 +24,7 @@ const Dashboard: React.FC<DashboardProps> = ({ session }) => {
   const [recentLogs, setRecentLogs] = useState<WorkLog[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [selectedWorkLog, setSelectedWorkLog] = useState<WorkLog | null>(null);
 
   const userId = session.user.id;
   const userEmail = session.user.email;
@@ -222,8 +224,12 @@ const Dashboard: React.FC<DashboardProps> = ({ session }) => {
                 const mins = log.duration_minutes % 60;
 
                 return (
-                  <div key={log.id} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center">
-                    <div>
+                  <div
+                    key={log.id}
+                    onClick={() => setSelectedWorkLog(log)}
+                    className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center cursor-pointer hover:border-indigo-300 hover:shadow-md transition-all active:scale-[0.98]"
+                  >
+                    <div className="flex-1">
                       <p className="font-medium text-gray-900">{format(date, 'MMM d, yyyy')}</p>
                       <p className="text-xs text-gray-500 mt-0.5">
                         {hours}h {mins}m worked
@@ -247,6 +253,14 @@ const Dashboard: React.FC<DashboardProps> = ({ session }) => {
           </div>
         </div>
       </main>
+
+      {/* Work Log Detail Modal */}
+      {selectedWorkLog && (
+        <WorkLogDetail
+          workLog={selectedWorkLog}
+          onClose={() => setSelectedWorkLog(null)}
+        />
+      )}
     </div>
   );
 };
