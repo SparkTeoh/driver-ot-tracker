@@ -14,6 +14,60 @@ const FIXED_ALLOWANCE = 440;
 const ATTENDANCE_BONUS = 300;
 const MEAL_ALLOWANCE = 30; // Per outstation
 
+// Leave deduction constants
+const MEDICAL_LEAVE_DEDUCTION = 100;
+const ANNUAL_LEAVE_DEDUCTION = 100;
+const EMERGENCY_LEAVE_DEDUCTION = 300;
+
+/**
+ * Format decimal hours to "Xh Ym" format
+ * @param decimalHours Decimal hours (e.g., 9.52)
+ * @returns Formatted string (e.g., "9h 31m")
+ */
+const formatDuration = (decimalHours: number): string => {
+  const hours = Math.floor(decimalHours);
+  const minutes = Math.round((decimalHours - hours) * 60);
+  
+  if (hours === 0 && minutes === 0) {
+    return '0h';
+  }
+  
+  if (hours === 0) {
+    return `${minutes}m`;
+  }
+  
+  if (minutes === 0) {
+    return `${hours}h`;
+  }
+  
+  return `${hours}h ${minutes}m`;
+};
+
+/**
+ * Truncate long text with ellipsis
+ * @param text Text to truncate
+ * @param maxLength Maximum length before truncation
+ * @returns Truncated text
+ */
+const truncateText = (text: string, maxLength: number = 40): string => {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return text.substring(0, maxLength - 3) + '...';
+};
+
+/**
+ * Fetch leave records for a month
+ * TODO: Implement leave tracking system
+ * For now, this returns an empty array - to be connected to leave records table
+ */
+const fetchMonthlyLeaves = async (userId: string, year: number, month: number): Promise<any[]> => {
+  // TODO: Implement leave fetching from database
+  // This should query a 'leaves' or 'absences' table
+  // Expected structure: { date: string, leave_type: 'medical' | 'annual' | 'emergency' }
+  return [];
+};
+
 const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) => {
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState<number>(getYear(new Date()));
@@ -62,8 +116,19 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
     }
   };
 
+  // Get badge styling for day type
+  const getDayTypeBadgeStyle = (dayType?: DayType, isPublicHoliday?: boolean): string => {
+    if (isPublicHoliday || dayType === 'public_holiday') {
+      return 'bg-red-100 text-red-800 border border-red-200';
+    }
+    if (dayType === 'weekend') {
+      return 'bg-blue-100 text-blue-800 border border-blue-200';
+    }
+    return 'bg-gray-100 text-gray-800 border border-gray-200';
+  };
+
   // Calculate monthly totals
-  const calculateMonthlyTotals = useCallback((logs: WorkLog[]): MonthlySummary => {
+  const calculateMonthlyTotals = useCallback(async (logs: WorkLog[], year: number, month: number): Promise<MonthlySummary> => {
     let totalOTPay = 0;
     let mealAllowances = 0;
     
@@ -90,20 +155,33 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
       }
     });
 
-    // Calculate attendance bonus
-    // Assume full bonus if worked at least 20 days in the month, otherwise deduct proportionally
-    const workedDays = logs.length;
-    const expectedWorkDays = 26; // Based on your calculation: 26 days per month
-    let attendanceBonus = 0;
+    // Calculate attendance bonus with leave deductions
+    // Fixed base: RM 300
+    let attendanceBonus = ATTENDANCE_BONUS;
     
-    if (workedDays >= 20) {
-      // Full bonus if worked at least 20 days
-      attendanceBonus = ATTENDANCE_BONUS;
-    } else if (workedDays > 0) {
-      // Proportional bonus
-      attendanceBonus = (workedDays / expectedWorkDays) * ATTENDANCE_BONUS;
-    }
-    // If workedDays is 0, bonus remains 0
+    // Fetch leave records for this month
+    const leaves = await fetchMonthlyLeaves(userId, year, month);
+    
+    // Deduct based on leave type
+    leaves.forEach((leave) => {
+      switch (leave.leave_type?.toLowerCase()) {
+        case 'medical':
+        case 'medical_leave':
+          attendanceBonus -= MEDICAL_LEAVE_DEDUCTION;
+          break;
+        case 'annual':
+        case 'annual_leave':
+          attendanceBonus -= ANNUAL_LEAVE_DEDUCTION;
+          break;
+        case 'emergency':
+        case 'emergency_leave':
+          attendanceBonus -= EMERGENCY_LEAVE_DEDUCTION;
+          break;
+      }
+    });
+    
+    // Ensure bonus doesn't go below 0
+    attendanceBonus = Math.max(0, attendanceBonus);
 
     const specialAllowances = mealAllowances + attendanceBonus;
     const grandTotal = BASIC_SALARY + FIXED_ALLOWANCE + totalOTPay + specialAllowances;
@@ -117,7 +195,7 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
       attendanceBonus,
       grandTotal,
     };
-  }, []);
+  }, [userId]);
 
   // Transform work logs to monthly log records
   const transformLogsToRecords = useCallback((logs: WorkLog[]): MonthlyLogRecord[] => {
@@ -146,7 +224,7 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
         dayType: log.day_type || 'weekday',
         checkInLocation: log.check_in_location || log.clock_in_postcode || 'N/A',
         checkOutLocation: log.check_out_location || log.clock_out_postcode || 'N/A',
-        totalHours: Math.round((totalHours + Number.EPSILON) * 100) / 100,
+        totalHours,
         otAmount,
         allowanceAmount,
         isPublicHoliday: log.is_public_holiday || false,
@@ -169,7 +247,7 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
       setMonthlyLogs(records);
       
       // Calculate and set summary
-      const totals = calculateMonthlyTotals(logs);
+      const totals = await calculateMonthlyTotals(logs, selectedYear, selectedMonth);
       setSummary(totals);
     } catch (err: any) {
       console.error('Error fetching monthly data:', err);
@@ -318,8 +396,8 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check In Location</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check Out Location</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]">Check In Location</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]">Check Out Location</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Hours</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">OT Amount</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Allowance</th>
@@ -346,52 +424,55 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
                           {format(new Date(record.date), 'MMM d, yyyy')}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              record.dayType === 'public_holiday'
-                                ? 'bg-purple-100 text-purple-800'
-                                : record.dayType === 'weekend'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-gray-100 text-gray-800'
-                            }`}
-                          >
-                            {formatDayType(record.dayType)}
-                          </span>
-                          {record.isPublicHoliday && (
-                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-200 text-purple-800">
-                              PH
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${getDayTypeBadgeStyle(record.dayType, record.isPublicHoliday)}`}
+                            >
+                              {formatDayType(record.dayType)}
                             </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">
-                          <div className="flex items-center gap-1">
-                            <MapPin size={14} className="text-gray-400 shrink-0" />
-                            <span className="truncate">{record.checkInLocation}</span>
+                            {record.isPublicHoliday && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-200 text-red-900 border border-red-300">
+                                PH
+                              </span>
+                            )}
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">
+                        <td className="px-6 py-4 text-sm text-gray-600 min-w-[200px]">
                           <div className="flex items-center gap-1">
                             <MapPin size={14} className="text-gray-400 shrink-0" />
-                            <span className="truncate">{record.checkOutLocation}</span>
+                            <span className="truncate" title={record.checkInLocation}>
+                              {truncateText(record.checkInLocation, 40)}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600 min-w-[200px]">
+                          <div className="flex items-center gap-1">
+                            <MapPin size={14} className="text-gray-400 shrink-0" />
+                            <span className="truncate" title={record.checkOutLocation}>
+                              {truncateText(record.checkOutLocation, 40)}
+                            </span>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-medium">
-                          {record.totalHours.toFixed(2)}h
+                          {formatDuration(record.totalHours)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-semibold">
                           RM {record.otAmount.toFixed(2)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
-                          {record.allowanceAmount > 0 ? (
-                            <span className="font-semibold text-amber-600">
-                              RM {record.allowanceAmount.toFixed(2)}
-                              {record.isOutstation && (
-                                <span className="ml-1 text-xs text-amber-500">(Outstation)</span>
-                              )}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
+                          <div className="flex flex-col items-end gap-1">
+                            {record.isOutstation && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                                Outstation (+RM{MEAL_ALLOWANCE})
+                              </span>
+                            )}
+                            {record.isPublicHoliday && !record.isOutstation && (
+                              <span className="text-xs text-gray-500">Public Holiday Rate</span>
+                            )}
+                            {!record.isOutstation && !record.isPublicHoliday && (
+                              <span className="text-gray-400 text-xs">-</span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -407,4 +488,3 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
 };
 
 export default MonthlyDashboard;
-
