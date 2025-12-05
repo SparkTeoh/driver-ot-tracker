@@ -2,10 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
+import MonthlyDashboard from './components/MonthlyDashboard';
+
+type Page = 'dashboard' | 'monthly';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState<Page>('dashboard');
 
   useEffect(() => {
     // Check active session
@@ -35,9 +39,17 @@ const App: React.FC = () => {
     );
   }
 
+  if (!session) {
+    return <Login />;
+  }
+
   return (
     <>
-      {!session ? <Login /> : <Dashboard session={session} />}
+      {currentPage === 'dashboard' ? (
+        <Dashboard session={session} onNavigateToMonthly={() => setCurrentPage('monthly')} />
+      ) : (
+        <MonthlyDashboard session={session} onBack={() => setCurrentPage('dashboard')} />
+      )}
     </>
   );
 };

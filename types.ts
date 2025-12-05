@@ -17,6 +17,7 @@ export interface WorkLog {
   check_in_location?: string; // Full location string where work started
   check_out_location?: string; // Full location string where work ended
   is_outstation?: boolean; // Boolean to trigger RM 30 meal allowance
+  is_public_holiday?: boolean; // Boolean to mark if the day is a public holiday
   day_type?: DayType; // Weekday, Weekend, or PublicHoliday
 }
 
@@ -58,4 +59,27 @@ export interface OTCalculationBreakdown {
   // Totals
   totalOTAmount: number;
   totalAmount: number; // Including all allowances
+}
+
+export interface MonthlySummary {
+  basicSalary: number; // RM 3,200
+  fixedAllowance: number; // RM 440
+  totalOTPay: number;
+  specialAllowances: number; // Meal Allowances + Attendance Bonus
+  mealAllowances: number;
+  attendanceBonus: number; // RM 300 (deduct if applicable)
+  grandTotal: number;
+}
+
+export interface MonthlyLogRecord {
+  date: string;
+  dayType: DayType;
+  checkInLocation: string;
+  checkOutLocation: string;
+  totalHours: number;
+  otAmount: number;
+  allowanceAmount: number;
+  isPublicHoliday: boolean;
+  isOutstation: boolean;
+  workLog: WorkLog;
 }

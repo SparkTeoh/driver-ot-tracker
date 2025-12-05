@@ -71,8 +71,16 @@ const isPublicHoliday = (date: Date): boolean => {
 
 /**
  * Determine the day type (weekday, weekend, or public holiday)
+ * @param date The date to check
+ * @param isPublicHolidayOverride Optional override to manually set public holiday status
  */
-export const getDayType = (date: Date): DayType => {
+export const getDayType = (date: Date, isPublicHolidayOverride?: boolean): DayType => {
+  // If manually set as public holiday, use that
+  if (isPublicHolidayOverride === true) {
+    return 'public_holiday';
+  }
+  
+  // Otherwise, auto-detect
   if (isPublicHoliday(date)) {
     return 'public_holiday';
   }
@@ -136,10 +144,11 @@ const roundToBlocks = (minutes: number): number => {
 export const calculateOvertime = (
   clockIn: Date,
   clockOut: Date,
-  isOutstationOvernight: boolean = false
+  isOutstationOvernight: boolean = false,
+  isPublicHolidayOverride?: boolean
 ): OTCalculationBreakdown => {
   const totalMinutes = differenceInMinutes(clockOut, clockIn);
-  const dayType = getDayType(clockIn);
+  const dayType = getDayType(clockIn, isPublicHolidayOverride);
 
   // Initialize breakdown
   const breakdown: OTCalculationBreakdown = {
@@ -258,11 +267,14 @@ export const calculateOvertime = (
 export const performClockIn = async (
   userId: string,
   location?: { lat: number, lng: number, postcode: string },
-  checkInLocation?: string
+  checkInLocation?: string,
+  isPublicHoliday?: boolean
 ) => {
   const clockInTime = new Date();
   const clockInTimeStr = clockInTime.toISOString();
-  const dayType = getDayType(clockInTime);
+  
+  // Determine day type with manual override if provided
+  const dayType = getDayType(clockInTime, isPublicHoliday);
   
   // If location string not provided but coordinates are, fetch it
   let fullLocation = checkInLocation;
@@ -282,6 +294,7 @@ export const performClockIn = async (
         clock_in_lng: location?.lng,
         clock_in_postcode: location?.postcode,
         check_in_location: fullLocation,
+        is_public_holiday: isPublicHoliday || false,
         day_type: dayType
       }
     ])
@@ -302,11 +315,24 @@ export const performClockOut = async (
   isOutstationOvernight: boolean = false,
   checkOutLocation?: string
 ) => {
+  // Fetch existing work log to get stored public holiday status
+  const { data: existingLog, error: fetchError } = await supabase
+    .from('work_logs')
+    .select('is_public_holiday')
+    .eq('id', logId)
+    .single();
+
+  if (fetchError) {
+    console.error('Error fetching work log:', fetchError);
+  }
+
   const clockIn = new Date(clockInTimeStr);
   const clockOut = new Date(); // Now
   const clockOutTimeStr = clockOut.toISOString();
 
-  const calculation = calculateOvertime(clockIn, clockOut, isOutstationOvernight);
+  // Use stored public holiday status if available
+  const isPublicHoliday = existingLog?.is_public_holiday || false;
+  const calculation = calculateOvertime(clockIn, clockOut, isOutstationOvernight, isPublicHoliday);
 
   // If location string not provided but coordinates are, fetch it
   let fullLocation = checkOutLocation;
@@ -382,6 +408,27 @@ export const fetchRecentLogs = async (userId: string): Promise<WorkLog[]> => {
     .not('clock_out', 'is', null)
     .order('clock_in', { ascending: false })
     .limit(5);
+
+  if (error) throw error;
+  return data || [];
+};
+
+/**
+ * Fetch all work logs for a specific month
+ */
+export const fetchMonthlyLogs = async (userId: string, year: number, month: number): Promise<WorkLog[]> => {
+  const targetDate = new Date(year, month - 1, 1); // month is 1-based
+  const start = startOfMonth(targetDate).toISOString();
+  const end = endOfMonth(targetDate).toISOString();
+
+  const { data, error } = await supabase
+    .from('work_logs')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('clock_in', start)
+    .lte('clock_in', end)
+    .not('clock_out', 'is', null)
+    .order('clock_in', { ascending: true });
 
   if (error) throw error;
   return data || [];

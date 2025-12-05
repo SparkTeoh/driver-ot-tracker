@@ -22,6 +22,11 @@ ADD COLUMN IF NOT EXISTS check_out_location TEXT;
 ALTER TABLE work_logs
 ADD COLUMN IF NOT EXISTS is_outstation BOOLEAN DEFAULT FALSE;
 
+-- Add is_public_holiday field (boolean to mark if the day is a public holiday)
+-- 添加是否公共假期字段（布尔值，用于标记是否为公共假期）
+ALTER TABLE work_logs
+ADD COLUMN IF NOT EXISTS is_public_holiday BOOLEAN DEFAULT FALSE;
+
 -- Add day_type field (stores: 'weekday', 'weekend', or 'public_holiday')
 -- 添加日期类型字段（存储：工作日、周末或公共假期）
 -- Using CHECK constraint to ensure only valid values
@@ -51,6 +56,7 @@ ADD COLUMN IF NOT EXISTS day_type TEXT
 COMMENT ON COLUMN work_logs.check_in_location IS 'Full address string where work started (derived from coordinates via reverse geocoding)';
 COMMENT ON COLUMN work_logs.check_out_location IS 'Full address string where work ended (derived from coordinates via reverse geocoding)';
 COMMENT ON COLUMN work_logs.is_outstation IS 'Whether this is an outstation overnight shift (triggers RM 30 meal allowance)';
+COMMENT ON COLUMN work_logs.is_public_holiday IS 'Boolean to mark if the day is a public holiday (manually set during check-in)';
 COMMENT ON COLUMN work_logs.day_type IS 'Type of day: weekday, weekend, or public_holiday (used for OT calculation rates)';
 
 -- ----------------------------------------------------------------------------
@@ -62,6 +68,9 @@ CREATE INDEX IF NOT EXISTS idx_work_logs_day_type ON work_logs(day_type);
 
 -- Create index on is_outstation for filtering outstation records
 CREATE INDEX IF NOT EXISTS idx_work_logs_is_outstation ON work_logs(is_outstation);
+
+-- Create index on is_public_holiday for filtering public holiday records
+CREATE INDEX IF NOT EXISTS idx_work_logs_is_public_holiday ON work_logs(is_public_holiday);
 
 -- Optional: Composite index for common queries (e.g., filtering by day_type and is_outstation)
 -- CREATE INDEX IF NOT EXISTS idx_work_logs_day_type_outstation ON work_logs(day_type, is_outstation);

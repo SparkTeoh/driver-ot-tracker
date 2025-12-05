@@ -1,0 +1,410 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { format, startOfMonth, endOfMonth, getMonth, getYear } from 'date-fns';
+import { ArrowLeft, Calendar, DollarSign, TrendingUp, FileText, MapPin, AlertCircle } from 'lucide-react';
+import { WorkLog, MonthlySummary, MonthlyLogRecord, DayType } from '../types';
+import { fetchMonthlyLogs, calculateOvertime } from '../services/timeService';
+
+interface MonthlyDashboardProps {
+  session: any;
+  onBack: () => void;
+}
+
+const BASIC_SALARY = 3200;
+const FIXED_ALLOWANCE = 440;
+const ATTENDANCE_BONUS = 300;
+const MEAL_ALLOWANCE = 30; // Per outstation
+
+const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) => {
+  const [loading, setLoading] = useState(true);
+  const [selectedYear, setSelectedYear] = useState<number>(getYear(new Date()));
+  const [selectedMonth, setSelectedMonth] = useState<number>(getMonth(new Date()) + 1); // 1-based
+  const [monthlyLogs, setMonthlyLogs] = useState<MonthlyLogRecord[]>([]);
+  const [summary, setSummary] = useState<MonthlySummary>({
+    basicSalary: BASIC_SALARY,
+    fixedAllowance: FIXED_ALLOWANCE,
+    totalOTPay: 0,
+    specialAllowances: 0,
+    mealAllowances: 0,
+    attendanceBonus: 0,
+    grandTotal: 0,
+  });
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const userId = session.user.id;
+
+  // Generate month options (last 12 months)
+  const getMonthOptions = () => {
+    const options = [];
+    const currentDate = new Date();
+    for (let i = 0; i < 12; i++) {
+      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+      options.push({
+        value: `${date.getFullYear()}-${date.getMonth() + 1}`,
+        label: format(date, 'MMMM yyyy'),
+        year: date.getFullYear(),
+        month: date.getMonth() + 1,
+      });
+    }
+    return options;
+  };
+
+  // Format day type for display
+  const formatDayType = (dayType?: DayType): string => {
+    switch (dayType) {
+      case 'weekday':
+        return 'Weekday';
+      case 'weekend':
+        return 'Weekend';
+      case 'public_holiday':
+        return 'Public Holiday';
+      default:
+        return 'N/A';
+    }
+  };
+
+  // Calculate monthly totals
+  const calculateMonthlyTotals = useCallback((logs: WorkLog[]): MonthlySummary => {
+    let totalOTPay = 0;
+    let mealAllowances = 0;
+    
+    // Process each log
+    logs.forEach((log) => {
+      if (log.clock_out) {
+        const clockIn = new Date(log.clock_in);
+        const clockOut = new Date(log.clock_out);
+        
+        // Recalculate breakdown for accurate totals
+        const breakdown = calculateOvertime(
+          clockIn,
+          clockOut,
+          log.is_outstation || false,
+          log.is_public_holiday || false
+        );
+        
+        totalOTPay += breakdown.totalOTAmount;
+        
+        // Add meal allowance if outstation
+        if (log.is_outstation) {
+          mealAllowances += MEAL_ALLOWANCE;
+        }
+      }
+    });
+
+    // Calculate attendance bonus
+    // Assume full bonus if worked at least 20 days in the month, otherwise deduct proportionally
+    const workedDays = logs.length;
+    const expectedWorkDays = 26; // Based on your calculation: 26 days per month
+    let attendanceBonus = 0;
+    
+    if (workedDays >= 20) {
+      // Full bonus if worked at least 20 days
+      attendanceBonus = ATTENDANCE_BONUS;
+    } else if (workedDays > 0) {
+      // Proportional bonus
+      attendanceBonus = (workedDays / expectedWorkDays) * ATTENDANCE_BONUS;
+    }
+    // If workedDays is 0, bonus remains 0
+
+    const specialAllowances = mealAllowances + attendanceBonus;
+    const grandTotal = BASIC_SALARY + FIXED_ALLOWANCE + totalOTPay + specialAllowances;
+
+    return {
+      basicSalary: BASIC_SALARY,
+      fixedAllowance: FIXED_ALLOWANCE,
+      totalOTPay,
+      specialAllowances,
+      mealAllowances,
+      attendanceBonus,
+      grandTotal,
+    };
+  }, []);
+
+  // Transform work logs to monthly log records
+  const transformLogsToRecords = useCallback((logs: WorkLog[]): MonthlyLogRecord[] => {
+    return logs.map((log) => {
+      const clockIn = new Date(log.clock_in);
+      const clockOut = log.clock_out ? new Date(log.clock_out) : null;
+      
+      let otAmount = 0;
+      let allowanceAmount = 0;
+      
+      if (clockOut) {
+        const breakdown = calculateOvertime(
+          clockIn,
+          clockOut,
+          log.is_outstation || false,
+          log.is_public_holiday || false
+        );
+        otAmount = breakdown.totalOTAmount;
+        allowanceAmount = breakdown.mealAllowance;
+      }
+
+      const totalHours = log.duration_minutes / 60;
+
+      return {
+        date: format(clockIn, 'yyyy-MM-dd'),
+        dayType: log.day_type || 'weekday',
+        checkInLocation: log.check_in_location || log.clock_in_postcode || 'N/A',
+        checkOutLocation: log.check_out_location || log.clock_out_postcode || 'N/A',
+        totalHours: Math.round((totalHours + Number.EPSILON) * 100) / 100,
+        otAmount,
+        allowanceAmount,
+        isPublicHoliday: log.is_public_holiday || false,
+        isOutstation: log.is_outstation || false,
+        workLog: log,
+      };
+    });
+  }, []);
+
+  // Fetch monthly data
+  const fetchMonthlyData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setErrorMsg(null);
+
+      const logs = await fetchMonthlyLogs(userId, selectedYear, selectedMonth);
+      
+      // Transform and set logs
+      const records = transformLogsToRecords(logs);
+      setMonthlyLogs(records);
+      
+      // Calculate and set summary
+      const totals = calculateMonthlyTotals(logs);
+      setSummary(totals);
+    } catch (err: any) {
+      console.error('Error fetching monthly data:', err);
+      setErrorMsg(err.message || 'Failed to load monthly data.');
+      setMonthlyLogs([]);
+      setSummary({
+        basicSalary: BASIC_SALARY,
+        fixedAllowance: FIXED_ALLOWANCE,
+        totalOTPay: 0,
+        specialAllowances: 0,
+        mealAllowances: 0,
+        attendanceBonus: 0,
+        grandTotal: BASIC_SALARY + FIXED_ALLOWANCE,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [userId, selectedYear, selectedMonth, transformLogsToRecords, calculateMonthlyTotals]);
+
+  useEffect(() => {
+    fetchMonthlyData();
+  }, [fetchMonthlyData]);
+
+  // Handle month selection change
+  const handleMonthChange = (value: string) => {
+    const [year, month] = value.split('-').map(Number);
+    setSelectedYear(year);
+    setSelectedMonth(month);
+  };
+
+  const monthOptions = getMonthOptions();
+  const currentMonthValue = `${selectedYear}-${selectedMonth}`;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 max-w-6xl mx-auto shadow-xl border-x border-gray-200">
+      {/* Header */}
+      <header className="bg-white px-6 py-5 border-b border-gray-100 sticky top-0 z-10">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={onBack}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <ArrowLeft size={24} className="text-gray-600" />
+            </button>
+            <h1 className="text-2xl font-bold text-gray-900">Monthly Dashboard</h1>
+          </div>
+        </div>
+
+        {/* Month Selector */}
+        <div className="flex items-center gap-3">
+          <Calendar size={20} className="text-gray-500" />
+          <select
+            value={currentMonthValue}
+            onChange={(e) => handleMonthChange(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          >
+            {monthOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </header>
+
+      <main className="p-6 space-y-6">
+        {errorMsg && (
+          <div className="bg-red-50 text-red-700 p-4 rounded-xl flex items-start gap-3">
+            <AlertCircle size={20} className="mt-0.5 shrink-0" />
+            <p>{errorMsg}</p>
+          </div>
+        )}
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {/* Basic Salary */}
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <DollarSign size={24} className="opacity-80" />
+            </div>
+            <p className="text-blue-100 text-sm font-medium mb-1">Basic Salary</p>
+            <h3 className="text-2xl font-bold">RM {summary.basicSalary.toFixed(2)}</h3>
+          </div>
+
+          {/* Fixed Allowance */}
+          <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-5 text-white shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <TrendingUp size={24} className="opacity-80" />
+            </div>
+            <p className="text-purple-100 text-sm font-medium mb-1">Fixed Allowance</p>
+            <h3 className="text-2xl font-bold">RM {summary.fixedAllowance.toFixed(2)}</h3>
+          </div>
+
+          {/* Total OT Pay */}
+          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-5 text-white shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <DollarSign size={24} className="opacity-80" />
+            </div>
+            <p className="text-green-100 text-sm font-medium mb-1">Total OT Pay</p>
+            <h3 className="text-2xl font-bold">RM {summary.totalOTPay.toFixed(2)}</h3>
+          </div>
+
+          {/* Special Allowances */}
+          <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl p-5 text-white shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <FileText size={24} className="opacity-80" />
+            </div>
+            <p className="text-amber-100 text-sm font-medium mb-1">Special Allowances</p>
+            <h3 className="text-2xl font-bold">RM {summary.specialAllowances.toFixed(2)}</h3>
+            <p className="text-xs text-amber-100 mt-1">
+              Meal: RM {summary.mealAllowances.toFixed(2)} | Bonus: RM {summary.attendanceBonus.toFixed(2)}
+            </p>
+          </div>
+
+          {/* Grand Total */}
+          <div className="bg-gradient-to-br from-indigo-600 to-indigo-700 rounded-xl p-5 text-white shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <DollarSign size={24} className="opacity-80" />
+            </div>
+            <p className="text-indigo-100 text-sm font-medium mb-1">Grand Total</p>
+            <h3 className="text-3xl font-bold">RM {summary.grandTotal.toFixed(2)}</h3>
+          </div>
+        </div>
+
+        {/* Detailed Table */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900">Detailed Records</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              {monthlyLogs.length} record{monthlyLogs.length !== 1 ? 's' : ''} found for {format(new Date(selectedYear, selectedMonth - 1, 1), 'MMMM yyyy')}
+            </p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check In Location</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check Out Location</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Hours</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">OT Amount</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Allowance</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {monthlyLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                      No records found for this month.
+                    </td>
+                  </tr>
+                ) : (
+                  monthlyLogs.map((record, index) => {
+                    const highlightRow = record.isPublicHoliday || record.isOutstation;
+                    return (
+                      <tr
+                        key={record.workLog.id || index}
+                        className={`hover:bg-gray-50 transition-colors ${
+                          highlightRow ? 'bg-yellow-50 border-l-4 border-yellow-400' : ''
+                        }`}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {format(new Date(record.date), 'MMM d, yyyy')}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              record.dayType === 'public_holiday'
+                                ? 'bg-purple-100 text-purple-800'
+                                : record.dayType === 'weekend'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-gray-100 text-gray-800'
+                            }`}
+                          >
+                            {formatDayType(record.dayType)}
+                          </span>
+                          {record.isPublicHoliday && (
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-200 text-purple-800">
+                              PH
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">
+                          <div className="flex items-center gap-1">
+                            <MapPin size={14} className="text-gray-400 shrink-0" />
+                            <span className="truncate">{record.checkInLocation}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">
+                          <div className="flex items-center gap-1">
+                            <MapPin size={14} className="text-gray-400 shrink-0" />
+                            <span className="truncate">{record.checkOutLocation}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-medium">
+                          {record.totalHours.toFixed(2)}h
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-semibold">
+                          RM {record.otAmount.toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                          {record.allowanceAmount > 0 ? (
+                            <span className="font-semibold text-amber-600">
+                              RM {record.allowanceAmount.toFixed(2)}
+                              {record.isOutstation && (
+                                <span className="ml-1 text-xs text-amber-500">(Outstation)</span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default MonthlyDashboard;
+

@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { format } from 'date-fns';
-import { LogOut, Clock, DollarSign, History, AlertCircle, MapPin } from 'lucide-react';
+import { LogOut, Clock, DollarSign, History, AlertCircle, MapPin, Calendar, Home, BarChart3 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import {
   performClockIn,
   performClockOut,
   fetchActiveSession,
   fetchMonthlySummary,
-  fetchRecentLogs
+  fetchRecentLogs,
+  getDayType
 } from '../services/timeService';
 import { WorkLog } from '../types';
 import Timer from './Timer';
@@ -15,9 +16,10 @@ import WorkLogDetail from './WorkLogDetail';
 
 interface DashboardProps {
   session: any;
+  onNavigateToMonthly?: () => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ session }) => {
+const Dashboard: React.FC<DashboardProps> = ({ session, onNavigateToMonthly }) => {
   const [loading, setLoading] = useState(true);
   const [activeLog, setActiveLog] = useState<WorkLog | null>(null);
   const [monthlyTotal, setMonthlyTotal] = useState<number>(0);
@@ -25,6 +27,12 @@ const Dashboard: React.FC<DashboardProps> = ({ session }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [selectedWorkLog, setSelectedWorkLog] = useState<WorkLog | null>(null);
+  
+  // Check-in state
+  const [isPublicHoliday, setIsPublicHoliday] = useState<boolean>(false);
+  
+  // Check-out state
+  const [isOutstation, setIsOutstation] = useState<boolean>(false);
 
   const userId = session.user.id;
   const userEmail = session.user.email;
@@ -52,6 +60,15 @@ const Dashboard: React.FC<DashboardProps> = ({ session }) => {
   useEffect(() => {
     refreshData();
   }, [refreshData]);
+
+  // Auto-detect public holiday status when component mounts or activeLog changes
+  useEffect(() => {
+    if (!activeLog) {
+      const today = new Date();
+      const detectedDayType = getDayType(today);
+      setIsPublicHoliday(detectedDayType === 'public_holiday');
+    }
+  }, [activeLog]);
 
   const getLocation = (): Promise<{ lat: number; lng: number }> => {
     return new Promise((resolve, reject) => {
@@ -93,7 +110,10 @@ const Dashboard: React.FC<DashboardProps> = ({ session }) => {
       const location = await getLocation();
       const postcode = await getPostcode(location.lat, location.lng);
 
-      await performClockIn(userId, { ...location, postcode });
+      await performClockIn(userId, { ...location, postcode }, undefined, isPublicHoliday);
+      
+      // Reset state after successful clock in
+      setIsPublicHoliday(false);
       await refreshData();
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to clock in");
@@ -112,7 +132,10 @@ const Dashboard: React.FC<DashboardProps> = ({ session }) => {
       const location = await getLocation();
       const postcode = await getPostcode(location.lat, location.lng);
 
-      await performClockOut(activeLog.id, activeLog.clock_in, { ...location, postcode });
+      await performClockOut(activeLog.id, activeLog.clock_in, { ...location, postcode }, isOutstation);
+      
+      // Reset state after successful clock out
+      setIsOutstation(false);
       await refreshData();
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to clock out");
@@ -141,9 +164,21 @@ const Dashboard: React.FC<DashboardProps> = ({ session }) => {
       <header className="bg-white px-6 py-5 border-b border-gray-100 sticky top-0 z-10">
         <div className="flex justify-between items-center mb-2">
           <h1 className="text-xl font-bold text-gray-900">Driver OT Tracker</h1>
-          <button onClick={handleLogout} className="text-gray-500 hover:text-red-600 transition-colors p-2">
-            <LogOut size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            {onNavigateToMonthly && (
+              <button
+                onClick={onNavigateToMonthly}
+                className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 transition-colors p-2 rounded-lg flex items-center gap-2"
+                title="View Monthly Dashboard"
+              >
+                <BarChart3 size={20} />
+                <span className="text-sm font-medium hidden sm:inline">Monthly Report</span>
+              </button>
+            )}
+            <button onClick={handleLogout} className="text-gray-500 hover:text-red-600 transition-colors p-2">
+              <LogOut size={20} />
+            </button>
+          </div>
         </div>
         <p className="text-gray-500 text-sm font-medium">{currentDate}</p>
         <p className="text-xs text-gray-400 mt-1 truncate">Logged in as: {userEmail}</p>
@@ -179,21 +214,98 @@ const Dashboard: React.FC<DashboardProps> = ({ session }) => {
           </div>
 
           {!activeLog ? (
-            <button
-              onClick={handleClockIn}
-              disabled={actionLoading}
-              className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-emerald-200 transition-all transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
-            >
-              {actionLoading ? 'Processing...' : 'CLOCK IN'}
-            </button>
+            <>
+              {/* Public Holiday Checkbox for Check-in */}
+              <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      checked={isPublicHoliday}
+                      onChange={(e) => setIsPublicHoliday(e.target.checked)}
+                      disabled={actionLoading}
+                      className="sr-only"
+                    />
+                    <div
+                      className={`w-11 h-6 rounded-full transition-colors duration-200 ease-in-out ${
+                        isPublicHoliday
+                          ? 'bg-indigo-600'
+                          : 'bg-gray-300'
+                      } ${actionLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer group-hover:bg-opacity-80'}`}
+                    >
+                      <div
+                        className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
+                          isPublicHoliday ? 'translate-x-5' : 'translate-x-0.5'
+                        } mt-0.5`}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-1">
+                    <Calendar size={18} className={isPublicHoliday ? 'text-indigo-600' : 'text-gray-500'} />
+                    <span className={`text-sm font-medium ${isPublicHoliday ? 'text-indigo-900' : 'text-gray-700'}`}>
+                      Is Today a Public Holiday?
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              <button
+                onClick={handleClockIn}
+                disabled={actionLoading}
+                className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-emerald-200 transition-all transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {actionLoading ? 'Processing...' : 'CLOCK IN'}
+              </button>
+            </>
           ) : (
-            <button
-              onClick={handleClockOut}
-              disabled={actionLoading}
-              className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-rose-200 transition-all transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
-            >
-              {actionLoading ? 'Calculaing...' : 'CLOCK OUT'}
-            </button>
+            <>
+              {/* Outstation Checkbox for Check-out */}
+              <div className="mb-4 p-4 bg-amber-50 rounded-xl border border-amber-200">
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      checked={isOutstation}
+                      onChange={(e) => setIsOutstation(e.target.checked)}
+                      disabled={actionLoading}
+                      className="sr-only"
+                    />
+                    <div
+                      className={`w-11 h-6 rounded-full transition-colors duration-200 ease-in-out ${
+                        isOutstation
+                          ? 'bg-amber-600'
+                          : 'bg-gray-300'
+                      } ${actionLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer group-hover:bg-opacity-80'}`}
+                    >
+                      <div
+                        className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
+                          isOutstation ? 'translate-x-5' : 'translate-x-0.5'
+                        } mt-0.5`}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-1">
+                    <Home size={18} className={isOutstation ? 'text-amber-600' : 'text-gray-500'} />
+                    <span className={`text-sm font-medium ${isOutstation ? 'text-amber-900' : 'text-gray-700'}`}>
+                      Did you stay overnight (Outstation)?
+                    </span>
+                  </div>
+                </label>
+                {isOutstation && (
+                  <p className="text-xs text-amber-700 mt-2 ml-14">
+                    RM 30 meal allowance will be added
+                  </p>
+                )}
+              </div>
+
+              <button
+                onClick={handleClockOut}
+                disabled={actionLoading}
+                className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-rose-200 transition-all transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {actionLoading ? 'Calculating...' : 'CLOCK OUT'}
+              </button>
+            </>
           )}
         </div>
 
