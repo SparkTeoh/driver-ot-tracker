@@ -140,12 +140,17 @@ const roundToBlocks = (minutes: number): number => {
  * - Public Holidays: First 9 hours = 2.0x, After 9 hours = 3.0x
  * - Outstation Overnight: +RM 30 meal allowance per day
  * - Minimum Block: 30-minute units
+ * 
+ * Note: For multiple work sessions on the same day, hours are cumulative.
+ * For example, if you work 6 hours in the morning and 3 hours in the evening on a weekend,
+ * the evening session will be calculated at 1.5x rate (after 6 hours).
  */
 export const calculateOvertime = (
   clockIn: Date,
   clockOut: Date,
   isOutstationOvernight: boolean = false,
-  isPublicHolidayOverride?: boolean
+  isPublicHolidayOverride?: boolean,
+  cumulativeMinutesWorkedToday: number = 0 // Cumulative minutes worked earlier in the same day
 ): OTCalculationBreakdown => {
   const totalMinutes = differenceInMinutes(clockOut, clockIn);
   const dayType = getDayType(clockIn, isPublicHolidayOverride);
@@ -182,43 +187,70 @@ export const calculateOvertime = (
 
   if (dayType === 'weekday') {
     // Weekdays: First 10 hours = Fixed OT (not paid), After 10 hours = 1.5x
-    if (remainingMinutes > WEEKDAY_FIXED_OT_MINUTES) {
-      breakdown.fixedOTMinutes = WEEKDAY_FIXED_OT_MINUTES;
-      breakdown.fixedOTHours = WEEKDAY_FIXED_OT_MINUTES / 60;
+    // Calculate cumulative hours including previous sessions today
+    const totalCumulativeMinutes = cumulativeMinutesWorkedToday + remainingMinutes;
+    
+    if (cumulativeMinutesWorkedToday >= WEEKDAY_FIXED_OT_MINUTES) {
+      // Already worked 10+ hours today - all current session at 1.5x
+      breakdown.otMinutes1_5x = remainingMinutes;
+      breakdown.otHours1_5x = remainingMinutes / 60;
+    } else if (totalCumulativeMinutes > WEEKDAY_FIXED_OT_MINUTES) {
+      // Current session crosses the 10-hour threshold
+      const minutesInFixedOT = WEEKDAY_FIXED_OT_MINUTES - cumulativeMinutesWorkedToday;
+      breakdown.fixedOTMinutes = minutesInFixedOT;
+      breakdown.fixedOTHours = minutesInFixedOT / 60;
       
-      const otMinutes = remainingMinutes - WEEKDAY_FIXED_OT_MINUTES;
+      const otMinutes = remainingMinutes - minutesInFixedOT;
       breakdown.otMinutes1_5x = otMinutes;
       breakdown.otHours1_5x = otMinutes / 60;
     } else {
-      // Less than 10 hours worked - all goes to fixed OT (not paid)
+      // Still within first 10 hours - all goes to fixed OT (not paid)
       breakdown.fixedOTMinutes = remainingMinutes;
       breakdown.fixedOTHours = remainingMinutes / 60;
     }
   } else if (dayType === 'weekend') {
     // Weekends: First 6 hours = 1.0x, After 6 hours = 1.5x
-    if (remainingMinutes > WEEKEND_FIRST_TIER_MINUTES) {
-      breakdown.otMinutes1x = WEEKEND_FIRST_TIER_MINUTES;
-      breakdown.otHours1x = WEEKEND_FIRST_TIER_MINUTES / 60;
+    // Calculate cumulative hours including previous sessions today
+    const totalCumulativeMinutes = cumulativeMinutesWorkedToday + remainingMinutes;
+    
+    if (cumulativeMinutesWorkedToday >= WEEKEND_FIRST_TIER_MINUTES) {
+      // Already worked 6+ hours today - all current session at 1.5x
+      breakdown.otMinutes1_5x = remainingMinutes;
+      breakdown.otHours1_5x = remainingMinutes / 60;
+    } else if (totalCumulativeMinutes > WEEKEND_FIRST_TIER_MINUTES) {
+      // Current session crosses the 6-hour threshold
+      const minutesAt1x = WEEKEND_FIRST_TIER_MINUTES - cumulativeMinutesWorkedToday;
+      breakdown.otMinutes1x = minutesAt1x;
+      breakdown.otHours1x = minutesAt1x / 60;
       
-      const otMinutes = remainingMinutes - WEEKEND_FIRST_TIER_MINUTES;
+      const otMinutes = remainingMinutes - minutesAt1x;
       breakdown.otMinutes1_5x = otMinutes;
       breakdown.otHours1_5x = otMinutes / 60;
     } else {
-      // Less than 6 hours worked - all at 1.0x
+      // Still within first 6 hours - all at 1.0x
       breakdown.otMinutes1x = remainingMinutes;
       breakdown.otHours1x = remainingMinutes / 60;
     }
   } else if (dayType === 'public_holiday') {
     // Public Holidays: First 9 hours = 2.0x, After 9 hours = 3.0x
-    if (remainingMinutes > PUBLIC_HOLIDAY_FIRST_TIER_MINUTES) {
-      breakdown.otMinutes2x = PUBLIC_HOLIDAY_FIRST_TIER_MINUTES;
-      breakdown.otHours2x = PUBLIC_HOLIDAY_FIRST_TIER_MINUTES / 60;
+    // Calculate cumulative hours including previous sessions today
+    const totalCumulativeMinutes = cumulativeMinutesWorkedToday + remainingMinutes;
+    
+    if (cumulativeMinutesWorkedToday >= PUBLIC_HOLIDAY_FIRST_TIER_MINUTES) {
+      // Already worked 9+ hours today - all current session at 3.0x
+      breakdown.otMinutes3x = remainingMinutes;
+      breakdown.otHours3x = remainingMinutes / 60;
+    } else if (totalCumulativeMinutes > PUBLIC_HOLIDAY_FIRST_TIER_MINUTES) {
+      // Current session crosses the 9-hour threshold
+      const minutesAt2x = PUBLIC_HOLIDAY_FIRST_TIER_MINUTES - cumulativeMinutesWorkedToday;
+      breakdown.otMinutes2x = minutesAt2x;
+      breakdown.otHours2x = minutesAt2x / 60;
       
-      const otMinutes = remainingMinutes - PUBLIC_HOLIDAY_FIRST_TIER_MINUTES;
+      const otMinutes = remainingMinutes - minutesAt2x;
       breakdown.otMinutes3x = otMinutes;
       breakdown.otHours3x = otMinutes / 60;
     } else {
-      // Less than 9 hours worked - all at 2.0x
+      // Still within first 9 hours - all at 2.0x
       breakdown.otMinutes2x = remainingMinutes;
       breakdown.otHours2x = remainingMinutes / 60;
     }
@@ -318,7 +350,7 @@ export const performClockOut = async (
   // Fetch existing work log to get stored public holiday status
   const { data: existingLog, error: fetchError } = await supabase
     .from('work_logs')
-    .select('is_public_holiday')
+    .select('is_public_holiday, user_id')
     .eq('id', logId)
     .single();
 
@@ -332,7 +364,36 @@ export const performClockOut = async (
 
   // Use stored public holiday status if available
   const isPublicHoliday = existingLog?.is_public_holiday || false;
-  const calculation = calculateOvertime(clockIn, clockOut, isOutstationOvernight, isPublicHoliday);
+  
+  // Recalculate day_type based on clock_in date and is_public_holiday to ensure consistency
+  // This fixes cases where day_type might have been incorrectly stored (e.g., old data)
+  const dayType = getDayType(clockIn, isPublicHoliday);
+  
+  // Calculate cumulative minutes worked earlier in the same day (before current session)
+  // Get the date in YYYY-MM-DD format for comparison
+  const dateStr = format(clockIn, 'yyyy-MM-dd');
+  const dayStart = new Date(dateStr + 'T00:00:00');
+  const dayEnd = new Date(dateStr + 'T23:59:59');
+  
+  let cumulativeMinutes = 0;
+  if (existingLog?.user_id) {
+    // Fetch all completed work logs for the same day, excluding the current one
+    const { data: sameDayLogs, error: sameDayError } = await supabase
+      .from('work_logs')
+      .select('duration_minutes, clock_in')
+      .eq('user_id', existingLog.user_id)
+      .not('clock_out', 'is', null)
+      .neq('id', logId) // Exclude current log
+      .gte('clock_in', dayStart.toISOString())
+      .lte('clock_in', dayEnd.toISOString());
+    
+    if (!sameDayError && sameDayLogs) {
+      // Sum up all durations from earlier sessions today
+      cumulativeMinutes = sameDayLogs.reduce((sum, log) => sum + (log.duration_minutes || 0), 0);
+    }
+  }
+  
+  const calculation = calculateOvertime(clockIn, clockOut, isOutstationOvernight, isPublicHoliday, cumulativeMinutes);
 
   // If location string not provided but coordinates are, fetch it
   let fullLocation = checkOutLocation;
@@ -350,7 +411,8 @@ export const performClockOut = async (
       clock_out_lng: location?.lng,
       clock_out_postcode: location?.postcode,
       check_out_location: fullLocation,
-      is_outstation: isOutstationOvernight
+      is_outstation: isOutstationOvernight,
+      day_type: dayType // Update day_type to ensure consistency with calculation
     })
     .eq('id', logId)
     .select()

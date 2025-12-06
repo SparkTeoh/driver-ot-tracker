@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { X, MapPin, Clock, Calendar, Receipt, DollarSign } from 'lucide-react';
 import { WorkLog } from '../types';
 import { calculateOvertime, OT_CONSTANTS } from '../services/timeService';
+import { supabase } from '../supabaseClient';
 
 interface WorkLogDetailProps {
   workLog: WorkLog;
@@ -10,18 +11,64 @@ interface WorkLogDetailProps {
 }
 
 const WorkLogDetail: React.FC<WorkLogDetailProps> = ({ workLog, onClose }) => {
+  const [cumulativeMinutes, setCumulativeMinutes] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+  
   // Recalculate breakdown from stored data
   const clockIn = new Date(workLog.clock_in);
   const clockOut = workLog.clock_out ? new Date(workLog.clock_out) : null;
   
+  // Fetch cumulative minutes worked earlier in the same day
+  useEffect(() => {
+    const fetchCumulativeMinutes = async () => {
+      if (!clockOut) {
+        setLoading(false);
+        return;
+      }
+      
+      try {
+        // Get the date in YYYY-MM-DD format for comparison
+        const dateStr = format(clockIn, 'yyyy-MM-dd');
+        const dayStart = new Date(dateStr + 'T00:00:00');
+        const dayEnd = new Date(dateStr + 'T23:59:59');
+        
+        // Fetch all completed work logs for the same day, before the current session
+        // We need to find logs that started before the current session's clock_in time
+        const { data: sameDayLogs, error } = await supabase
+          .from('work_logs')
+          .select('duration_minutes, clock_in')
+          .eq('user_id', workLog.user_id)
+          .not('clock_out', 'is', null)
+          .neq('id', workLog.id) // Exclude current log
+          .gte('clock_in', dayStart.toISOString())
+          .lte('clock_in', dayEnd.toISOString())
+          .lt('clock_in', workLog.clock_in); // Only logs that started before this session
+        
+        if (!error && sameDayLogs) {
+          // Sum up all durations from earlier sessions today
+          const cumulative = sameDayLogs.reduce((sum, log) => sum + (log.duration_minutes || 0), 0);
+          setCumulativeMinutes(cumulative);
+        }
+      } catch (err) {
+        console.error('Error fetching cumulative minutes:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchCumulativeMinutes();
+  }, [workLog.id, workLog.user_id, workLog.clock_in, clockOut]);
+  
   // Calculate breakdown if clock out exists
   // Use stored values for is_outstation and is_public_holiday to ensure consistency
-  const breakdown = clockOut 
+  // Include cumulative minutes for accurate calculation
+  const breakdown = clockOut && !loading
     ? calculateOvertime(
         clockIn, 
         clockOut, 
         workLog.is_outstation || false,
-        workLog.is_public_holiday || false
+        workLog.is_public_holiday || false,
+        cumulativeMinutes
       )
     : null;
 
@@ -97,12 +144,12 @@ const WorkLogDetail: React.FC<WorkLogDetailProps> = ({ workLog, onClose }) => {
           <div className="flex items-baseline gap-2">
             <DollarSign size={24} />
             <span className="text-3xl font-bold">
-              RM {workLog.overtime_amount.toFixed(2)}
+              RM {breakdown ? breakdown.totalOTAmount.toFixed(2) : workLog.overtime_amount.toFixed(2)}
             </span>
           </div>
           {breakdown && Math.abs(breakdown.totalOTAmount - workLog.overtime_amount) > 0.01 && (
-            <p className="text-xs text-indigo-200 mt-1">
-              Note: Recalculated value differs. Showing stored amount.
+            <p className="text-xs text-amber-200 mt-1 bg-amber-800/30 px-2 py-1 rounded">
+              ⚠️ Stored amount: RM {workLog.overtime_amount.toFixed(2)} | Recalculated: RM {breakdown.totalOTAmount.toFixed(2)} (showing recalculated)
             </p>
           )}
           {workLog.day_type && (
