@@ -63,11 +63,11 @@ export interface OTCalculationBreakdown {
 
 export interface MonthlySummary {
   basicSalary: number; // RM 3,200
-  fixedAllowance: number; // RM 440
+  fixedOTAllowance: number; // RM 440
   totalOTPay: number;
-  specialAllowances: number; // Meal Allowances + Attendance Bonus
-  mealAllowances: number;
-  attendanceBonus: number; // RM 300 (deduct if applicable)
+  foodAllowance: number; // RM 250 (fixed)
+  fullAttendanceReward: number; // RM 300 (full if no leave)
+  outstationMealAllowances: number; // Outstation overnight meal allowances
   grandTotal: number;
 }
 

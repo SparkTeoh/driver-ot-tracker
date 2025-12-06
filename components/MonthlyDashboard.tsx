@@ -10,14 +10,10 @@ interface MonthlyDashboardProps {
 }
 
 const BASIC_SALARY = 3200;
-const FIXED_ALLOWANCE = 440;
-const ATTENDANCE_BONUS = 300;
-const MEAL_ALLOWANCE = 30; // Per outstation
-
-// Leave deduction constants
-const MEDICAL_LEAVE_DEDUCTION = 100;
-const ANNUAL_LEAVE_DEDUCTION = 100;
-const EMERGENCY_LEAVE_DEDUCTION = 300;
+const FIXED_OT_ALLOWANCE = 440;
+const FOOD_ALLOWANCE = 250;
+const FULL_ATTENDANCE_REWARD = 300;
+const MEAL_ALLOWANCE = 30; // Per outstation (for outstation overnight)
 
 /**
  * Format decimal hours to "Xh Ym" format
@@ -75,11 +71,11 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
   const [monthlyLogs, setMonthlyLogs] = useState<MonthlyLogRecord[]>([]);
   const [summary, setSummary] = useState<MonthlySummary>({
     basicSalary: BASIC_SALARY,
-    fixedAllowance: FIXED_ALLOWANCE,
+    fixedOTAllowance: FIXED_OT_ALLOWANCE,
     totalOTPay: 0,
-    specialAllowances: 0,
-    mealAllowances: 0,
-    attendanceBonus: 0,
+    foodAllowance: FOOD_ALLOWANCE,
+    fullAttendanceReward: 0,
+    outstationMealAllowances: 0,
     grandTotal: 0,
   });
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -130,7 +126,7 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
   // Calculate monthly totals
   const calculateMonthlyTotals = useCallback(async (logs: WorkLog[], year: number, month: number): Promise<MonthlySummary> => {
     let totalOTPay = 0;
-    let mealAllowances = 0;
+    let outstationMealAllowances = 0;
     
     // Process each log
     logs.forEach((log) => {
@@ -150,49 +146,48 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
         
         // Add meal allowance if outstation
         if (log.is_outstation) {
-          mealAllowances += MEAL_ALLOWANCE;
+          outstationMealAllowances += MEAL_ALLOWANCE;
         }
       }
     });
 
-    // Calculate attendance bonus with leave deductions
-    // Fixed base: RM 300
-    let attendanceBonus = ATTENDANCE_BONUS;
+    // Calculate Full Attendance Reward
+    // Fixed base: RM 300, get full if no Annual, Emergency, or Medical Leave
+    let fullAttendanceReward = FULL_ATTENDANCE_REWARD;
     
     // Fetch leave records for this month
     const leaves = await fetchMonthlyLeaves(userId, year, month);
     
-    // Deduct based on leave type
-    leaves.forEach((leave) => {
-      switch (leave.leave_type?.toLowerCase()) {
-        case 'medical':
-        case 'medical_leave':
-          attendanceBonus -= MEDICAL_LEAVE_DEDUCTION;
-          break;
-        case 'annual':
-        case 'annual_leave':
-          attendanceBonus -= ANNUAL_LEAVE_DEDUCTION;
-          break;
-        case 'emergency':
-        case 'emergency_leave':
-          attendanceBonus -= EMERGENCY_LEAVE_DEDUCTION;
-          break;
-      }
+    // Check if any leave was taken - if yes, set reward to 0
+    const hasLeave = leaves.some((leave) => {
+      const leaveType = leave.leave_type?.toLowerCase();
+      return leaveType === 'medical' || 
+             leaveType === 'medical_leave' ||
+             leaveType === 'annual' || 
+             leaveType === 'annual_leave' ||
+             leaveType === 'emergency' || 
+             leaveType === 'emergency_leave';
     });
     
-    // Ensure bonus doesn't go below 0
-    attendanceBonus = Math.max(0, attendanceBonus);
+    // Get full reward only if no leave was taken
+    if (hasLeave) {
+      fullAttendanceReward = 0;
+    }
 
-    const specialAllowances = mealAllowances + attendanceBonus;
-    const grandTotal = BASIC_SALARY + FIXED_ALLOWANCE + totalOTPay + specialAllowances;
+    const grandTotal = BASIC_SALARY + 
+                       FIXED_OT_ALLOWANCE + 
+                       totalOTPay + 
+                       FOOD_ALLOWANCE + 
+                       fullAttendanceReward + 
+                       outstationMealAllowances;
 
     return {
       basicSalary: BASIC_SALARY,
-      fixedAllowance: FIXED_ALLOWANCE,
+      fixedOTAllowance: FIXED_OT_ALLOWANCE,
       totalOTPay,
-      specialAllowances,
-      mealAllowances,
-      attendanceBonus,
+      foodAllowance: FOOD_ALLOWANCE,
+      fullAttendanceReward,
+      outstationMealAllowances,
       grandTotal,
     };
   }, [userId]);
@@ -255,12 +250,12 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
       setMonthlyLogs([]);
       setSummary({
         basicSalary: BASIC_SALARY,
-        fixedAllowance: FIXED_ALLOWANCE,
+        fixedOTAllowance: FIXED_OT_ALLOWANCE,
         totalOTPay: 0,
-        specialAllowances: 0,
-        mealAllowances: 0,
-        attendanceBonus: 0,
-        grandTotal: BASIC_SALARY + FIXED_ALLOWANCE,
+        foodAllowance: FOOD_ALLOWANCE,
+        fullAttendanceReward: 0,
+        outstationMealAllowances: 0,
+        grandTotal: BASIC_SALARY + FIXED_OT_ALLOWANCE + FOOD_ALLOWANCE,
       });
     } finally {
       setLoading(false);
@@ -331,7 +326,7 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
         )}
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           {/* Basic Salary */}
           <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-lg">
             <div className="flex items-center justify-between mb-2">
@@ -341,13 +336,13 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
             <h3 className="text-2xl font-bold">RM {summary.basicSalary.toFixed(2)}</h3>
           </div>
 
-          {/* Fixed Allowance */}
+          {/* Fixed OT Allowance */}
           <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-5 text-white shadow-lg">
             <div className="flex items-center justify-between mb-2">
               <TrendingUp size={24} className="opacity-80" />
             </div>
-            <p className="text-purple-100 text-sm font-medium mb-1">Fixed Allowance</p>
-            <h3 className="text-2xl font-bold">RM {summary.fixedAllowance.toFixed(2)}</h3>
+            <p className="text-purple-100 text-sm font-medium mb-1">Fixed OT Allowance</p>
+            <h3 className="text-2xl font-bold">RM {summary.fixedOTAllowance.toFixed(2)}</h3>
           </div>
 
           {/* Total OT Pay */}
@@ -359,15 +354,29 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
             <h3 className="text-2xl font-bold">RM {summary.totalOTPay.toFixed(2)}</h3>
           </div>
 
-          {/* Special Allowances */}
+          {/* Food Allowance */}
           <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl p-5 text-white shadow-lg">
             <div className="flex items-center justify-between mb-2">
               <FileText size={24} className="opacity-80" />
             </div>
-            <p className="text-amber-100 text-sm font-medium mb-1">Special Allowances</p>
-            <h3 className="text-2xl font-bold">RM {summary.specialAllowances.toFixed(2)}</h3>
-            <p className="text-xs text-amber-100 mt-1">
-              Meal: RM {summary.mealAllowances.toFixed(2)} | Bonus: RM {summary.attendanceBonus.toFixed(2)}
+            <p className="text-amber-100 text-sm font-medium mb-1">Food Allowance</p>
+            <h3 className="text-2xl font-bold">RM {(summary.foodAllowance + summary.outstationMealAllowances).toFixed(2)}</h3>
+            {summary.outstationMealAllowances > 0 && (
+              <p className="text-xs text-amber-100 mt-1">
+                Base: RM {summary.foodAllowance.toFixed(2)} | Outstation: RM {summary.outstationMealAllowances.toFixed(2)}
+              </p>
+            )}
+          </div>
+
+          {/* Full Attendance Reward */}
+          <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-xl p-5 text-white shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <FileText size={24} className="opacity-80" />
+            </div>
+            <p className="text-pink-100 text-sm font-medium mb-1">Full Attendance Reward</p>
+            <h3 className="text-2xl font-bold">RM {summary.fullAttendanceReward.toFixed(2)}</h3>
+            <p className="text-xs text-pink-100 mt-1">
+              Full if no Annual, Emergency, or Medical Leave
             </p>
           </div>
 
