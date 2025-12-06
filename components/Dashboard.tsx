@@ -346,9 +346,9 @@ const Dashboard: React.FC<DashboardProps> = ({ session, onNavigateToMonthly }) =
                       <p className="text-xs text-gray-500 mt-0.5">
                         {hours}h {mins}m worked
                       </p>
-                      {log.clock_in_postcode && (
+                      {(log.check_in_location || log.clock_in_postcode) && (
                         <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
-                          <MapPin size={10} /> {log.clock_in_postcode}
+                          <MapPin size={10} /> {log.check_in_location || log.clock_in_postcode}
                         </p>
                       )}
                     </div>
