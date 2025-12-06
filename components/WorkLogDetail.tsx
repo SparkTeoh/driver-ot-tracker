@@ -15,8 +15,14 @@ const WorkLogDetail: React.FC<WorkLogDetailProps> = ({ workLog, onClose }) => {
   const clockOut = workLog.clock_out ? new Date(workLog.clock_out) : null;
   
   // Calculate breakdown if clock out exists
+  // Use stored values for is_outstation and is_public_holiday to ensure consistency
   const breakdown = clockOut 
-    ? calculateOvertime(clockIn, clockOut, workLog.is_outstation || false)
+    ? calculateOvertime(
+        clockIn, 
+        clockOut, 
+        workLog.is_outstation || false,
+        workLog.is_public_holiday || false
+      )
     : null;
 
   const totalHours = Math.floor(workLog.duration_minutes / 60);
@@ -52,6 +58,20 @@ const WorkLogDetail: React.FC<WorkLogDetailProps> = ({ workLog, onClose }) => {
     return hours.replace(/\.?0+$/, ''); // Remove trailing zeros
   };
 
+  // Round minutes to 30-minute blocks (ceiling) - same as calculation logic
+  const roundToBlocks = (minutes: number): number => {
+    const BLOCK_MINUTES = 30;
+    return Math.ceil(minutes / BLOCK_MINUTES) * BLOCK_MINUTES;
+  };
+
+  // Format rounded hours for display (shows the rounded hours used in calculation)
+  const formatRoundedHours = (minutes: number): string => {
+    const roundedMinutes = roundToBlocks(minutes);
+    const hours = roundedMinutes / 60;
+    // Show with 2 decimal places if needed, otherwise as whole number
+    return hours % 1 === 0 ? hours.toString() : hours.toFixed(2);
+  };
+
   const BASE_HOURLY_RATE = OT_CONSTANTS.BASE_HOURLY_RATE;
   const RATE_1_5X = OT_CONSTANTS.RATE_1_5X;
   const RATE_2X = OT_CONSTANTS.RATE_2X;
@@ -77,9 +97,14 @@ const WorkLogDetail: React.FC<WorkLogDetailProps> = ({ workLog, onClose }) => {
           <div className="flex items-baseline gap-2">
             <DollarSign size={24} />
             <span className="text-3xl font-bold">
-              RM {breakdown ? breakdown.totalAmount.toFixed(2) : workLog.overtime_amount.toFixed(2)}
+              RM {workLog.overtime_amount.toFixed(2)}
             </span>
           </div>
+          {breakdown && Math.abs(breakdown.totalOTAmount - workLog.overtime_amount) > 0.01 && (
+            <p className="text-xs text-indigo-200 mt-1">
+              Note: Recalculated value differs. Showing stored amount.
+            </p>
+          )}
           {workLog.day_type && (
             <p className="text-sm text-indigo-100 mt-2">
               {formatDayType(workLog.day_type)}
@@ -179,10 +204,13 @@ const WorkLogDetail: React.FC<WorkLogDetailProps> = ({ workLog, onClose }) => {
                     {breakdown.otHours1_5x > 0 && (
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-gray-600">
-                          Overtime ({formatHours(breakdown.otMinutes1_5x)} hrs):
+                          Overtime ({formatRoundedHours(breakdown.otMinutes1_5x)} hrs):
+                          {Math.abs(roundToBlocks(breakdown.otMinutes1_5x) - breakdown.otMinutes1_5x) > 0.5 && (
+                            <span className="text-xs text-gray-400 ml-1">({formatHours(breakdown.otMinutes1_5x)} hrs rounded up)</span>
+                          )}
                         </span>
                         <span className="font-semibold text-gray-900 text-right">
-                          {formatHours(breakdown.otMinutes1_5x)} hrs × RM {(BASE_HOURLY_RATE * RATE_1_5X).toFixed(2)} = RM {breakdown.otAmount1_5x.toFixed(2)}
+                          {formatRoundedHours(breakdown.otMinutes1_5x)} hrs × RM {(BASE_HOURLY_RATE * RATE_1_5X).toFixed(2)} = RM {breakdown.otAmount1_5x.toFixed(2)}
                         </span>
                       </div>
                     )}
@@ -195,20 +223,26 @@ const WorkLogDetail: React.FC<WorkLogDetailProps> = ({ workLog, onClose }) => {
                     {breakdown.otHours1x > 0 && (
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-gray-600">
-                          OT Rate 1.0x ({formatHours(breakdown.otMinutes1x)} hrs):
+                          OT Rate 1.0x ({formatRoundedHours(breakdown.otMinutes1x)} hrs):
+                          {Math.abs(roundToBlocks(breakdown.otMinutes1x) - breakdown.otMinutes1x) > 0.5 && (
+                            <span className="text-xs text-gray-400 ml-1">({formatHours(breakdown.otMinutes1x)} hrs rounded up)</span>
+                          )}
                         </span>
                         <span className="font-semibold text-gray-900 text-right">
-                          {formatHours(breakdown.otMinutes1x)} hrs × RM {BASE_HOURLY_RATE.toFixed(2)} = RM {breakdown.otAmount1x.toFixed(2)}
+                          {formatRoundedHours(breakdown.otMinutes1x)} hrs × RM {BASE_HOURLY_RATE.toFixed(2)} = RM {breakdown.otAmount1x.toFixed(2)}
                         </span>
                       </div>
                     )}
                     {breakdown.otHours1_5x > 0 && (
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-gray-600">
-                          OT Rate 1.5x ({formatHours(breakdown.otMinutes1_5x)} hrs):
+                          OT Rate 1.5x ({formatRoundedHours(breakdown.otMinutes1_5x)} hrs):
+                          {Math.abs(roundToBlocks(breakdown.otMinutes1_5x) - breakdown.otMinutes1_5x) > 0.5 && (
+                            <span className="text-xs text-gray-400 ml-1">({formatHours(breakdown.otMinutes1_5x)} hrs rounded up)</span>
+                          )}
                         </span>
                         <span className="font-semibold text-gray-900 text-right">
-                          {formatHours(breakdown.otMinutes1_5x)} hrs × RM {(BASE_HOURLY_RATE * RATE_1_5X).toFixed(2)} = RM {breakdown.otAmount1_5x.toFixed(2)}
+                          {formatRoundedHours(breakdown.otMinutes1_5x)} hrs × RM {(BASE_HOURLY_RATE * RATE_1_5X).toFixed(2)} = RM {breakdown.otAmount1_5x.toFixed(2)}
                         </span>
                       </div>
                     )}
@@ -221,20 +255,26 @@ const WorkLogDetail: React.FC<WorkLogDetailProps> = ({ workLog, onClose }) => {
                     {breakdown.otHours2x > 0 && (
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-gray-600">
-                          OT Rate 2.0x ({formatHours(breakdown.otMinutes2x)} hrs):
+                          OT Rate 2.0x ({formatRoundedHours(breakdown.otMinutes2x)} hrs):
+                          {Math.abs(roundToBlocks(breakdown.otMinutes2x) - breakdown.otMinutes2x) > 0.5 && (
+                            <span className="text-xs text-gray-400 ml-1">({formatHours(breakdown.otMinutes2x)} hrs rounded up)</span>
+                          )}
                         </span>
                         <span className="font-semibold text-gray-900 text-right">
-                          {formatHours(breakdown.otMinutes2x)} hrs × RM {(BASE_HOURLY_RATE * RATE_2X).toFixed(2)} = RM {breakdown.otAmount2x.toFixed(2)}
+                          {formatRoundedHours(breakdown.otMinutes2x)} hrs × RM {(BASE_HOURLY_RATE * RATE_2X).toFixed(2)} = RM {breakdown.otAmount2x.toFixed(2)}
                         </span>
                       </div>
                     )}
                     {breakdown.otHours3x > 0 && (
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-gray-600">
-                          OT Rate 3.0x ({formatHours(breakdown.otMinutes3x)} hrs):
+                          OT Rate 3.0x ({formatRoundedHours(breakdown.otMinutes3x)} hrs):
+                          {Math.abs(roundToBlocks(breakdown.otMinutes3x) - breakdown.otMinutes3x) > 0.5 && (
+                            <span className="text-xs text-gray-400 ml-1">({formatHours(breakdown.otMinutes3x)} hrs rounded up)</span>
+                          )}
                         </span>
                         <span className="font-semibold text-gray-900 text-right">
-                          {formatHours(breakdown.otMinutes3x)} hrs × RM {(BASE_HOURLY_RATE * RATE_3X).toFixed(2)} = RM {breakdown.otAmount3x.toFixed(2)}
+                          {formatRoundedHours(breakdown.otMinutes3x)} hrs × RM {(BASE_HOURLY_RATE * RATE_3X).toFixed(2)} = RM {breakdown.otAmount3x.toFixed(2)}
                         </span>
                       </div>
                     )}

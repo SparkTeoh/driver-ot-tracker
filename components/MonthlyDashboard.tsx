@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { format, startOfMonth, endOfMonth, getMonth, getYear } from 'date-fns';
 import { ArrowLeft, Calendar, DollarSign, TrendingUp, FileText, MapPin, AlertCircle } from 'lucide-react';
 import { WorkLog, MonthlySummary, MonthlyLogRecord, DayType } from '../types';
-import { fetchMonthlyLogs, calculateOvertime } from '../services/timeService';
+import { fetchMonthlyLogs, calculateOvertime, getDayType } from '../services/timeService';
 
 interface MonthlyDashboardProps {
   session: any;
@@ -214,9 +214,17 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
 
       const totalHours = log.duration_minutes / 60;
 
+      // If day_type is missing or null, recalculate based on the clock_in date
+      // This handles old data that was created before day_type was added
+      let dayType: DayType = log.day_type;
+      if (!dayType) {
+        // Recalculate day_type based on clock_in date and is_public_holiday flag
+        dayType = getDayType(clockIn, log.is_public_holiday || false);
+      }
+
       return {
         date: format(clockIn, 'yyyy-MM-dd'),
-        dayType: log.day_type || 'weekday',
+        dayType: dayType,
         checkInLocation: log.check_in_location || log.clock_in_postcode || 'N/A',
         checkOutLocation: log.check_out_location || log.clock_out_postcode || 'N/A',
         totalHours,
