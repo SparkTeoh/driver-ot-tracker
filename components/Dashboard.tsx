@@ -8,7 +8,8 @@ import {
   fetchActiveSession,
   fetchMonthlySummary,
   fetchRecentLogs,
-  getDayType
+  getDayType,
+  getFullLocationAddress
 } from '../services/timeService';
 import { WorkLog } from '../types';
 import Timer from './Timer';
@@ -109,8 +110,9 @@ const Dashboard: React.FC<DashboardProps> = ({ session, onNavigateToMonthly }) =
       // Get Location
       const location = await getLocation();
       const postcode = await getPostcode(location.lat, location.lng);
+      const fullAddress = await getFullLocationAddress(location.lat, location.lng);
 
-      await performClockIn(userId, { ...location, postcode }, undefined, isPublicHoliday);
+      await performClockIn(userId, { ...location, postcode }, fullAddress, isPublicHoliday);
       
       // Reset state after successful clock in
       setIsPublicHoliday(false);
@@ -131,8 +133,9 @@ const Dashboard: React.FC<DashboardProps> = ({ session, onNavigateToMonthly }) =
       // Get Location
       const location = await getLocation();
       const postcode = await getPostcode(location.lat, location.lng);
+      const fullAddress = await getFullLocationAddress(location.lat, location.lng);
 
-      await performClockOut(activeLog.id, activeLog.clock_in, { ...location, postcode }, isOutstation);
+      await performClockOut(activeLog.id, activeLog.clock_in, { ...location, postcode }, isOutstation, fullAddress);
       
       // Reset state after successful clock out
       setIsOutstation(false);
