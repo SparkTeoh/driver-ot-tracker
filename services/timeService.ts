@@ -5,10 +5,10 @@ import { WorkLog, OTCalculationBreakdown, DayType } from '../types';
 /**
  * Constants
  */
-const BASIC_SALARY = 3200;
+const BASIC_SALARY = 3000;
 const WORK_DAYS_PER_MONTH = 26;
 const HOURS_PER_DAY = 8;
-const BASE_HOURLY_RATE = BASIC_SALARY / WORK_DAYS_PER_MONTH / HOURS_PER_DAY; // RM 15.38/hour
+const BASE_HOURLY_RATE = BASIC_SALARY / WORK_DAYS_PER_MONTH / HOURS_PER_DAY; // RM 14.42/hour
 
 const BLOCK_MINUTES = 30; // Minimum block for OT calculation
 
@@ -19,8 +19,7 @@ const RATE_2X = 2.0;
 const RATE_3X = 3.0;
 
 // Thresholds in minutes
-const WEEKDAY_FIXED_OT_MINUTES = 600; // 10 hours
-const WEEKEND_FIRST_TIER_MINUTES = 360; // 6 hours
+const WEEKDAY_FIXED_OT_MINUTES = 540; // 9 hours
 const PUBLIC_HOLIDAY_FIRST_TIER_MINUTES = 540; // 9 hours
 
 const MEAL_ALLOWANCE = 30; // RM 30 for outstation overnight
@@ -135,15 +134,11 @@ const roundToBlocks = (minutes: number): number => {
  * Calculate Overtime Pay with detailed breakdown
  * 
  * Rules:
- * - Weekdays: First 10 hours = Fixed OT (counted but RM 0), After 10 hours = 1.5x
- * - Weekends: First 6 hours = 1.0x, After 6 hours = 1.5x
+ * - Weekdays: First 9 hours = standard work (RM 0 OT), after 9 hours = 1.5x
+ * - Weekends: All overtime at 1.5x
  * - Public Holidays: First 9 hours = 2.0x, After 9 hours = 3.0x
  * - Outstation Overnight: +RM 30 meal allowance per day
  * - Minimum Block: 30-minute units
- * 
- * Note: For multiple work sessions on the same day, hours are cumulative.
- * For example, if you work 6 hours in the morning and 3 hours in the evening on a weekend,
- * the evening session will be calculated at 1.5x rate (after 6 hours).
  */
 export const calculateOvertime = (
   clockIn: Date,
@@ -186,51 +181,28 @@ export const calculateOvertime = (
   let remainingMinutes = totalMinutes;
 
   if (dayType === 'weekday') {
-    // Weekdays: First 10 hours = Fixed OT (not paid), After 10 hours = 1.5x
-    // Calculate cumulative hours including previous sessions today
+    // Weekdays: first 9 hours standard work, then OT at 1.5x
     const totalCumulativeMinutes = cumulativeMinutesWorkedToday + remainingMinutes;
-    
+
     if (cumulativeMinutesWorkedToday >= WEEKDAY_FIXED_OT_MINUTES) {
-      // Already worked 10+ hours today - all current session at 1.5x
       breakdown.otMinutes1_5x = remainingMinutes;
       breakdown.otHours1_5x = remainingMinutes / 60;
     } else if (totalCumulativeMinutes > WEEKDAY_FIXED_OT_MINUTES) {
-      // Current session crosses the 10-hour threshold
-      const minutesInFixedOT = WEEKDAY_FIXED_OT_MINUTES - cumulativeMinutesWorkedToday;
-      breakdown.fixedOTMinutes = minutesInFixedOT;
-      breakdown.fixedOTHours = minutesInFixedOT / 60;
-      
-      const otMinutes = remainingMinutes - minutesInFixedOT;
+      const minutesInFixedWork = WEEKDAY_FIXED_OT_MINUTES - cumulativeMinutesWorkedToday;
+      breakdown.fixedOTMinutes = minutesInFixedWork;
+      breakdown.fixedOTHours = minutesInFixedWork / 60;
+
+      const otMinutes = remainingMinutes - minutesInFixedWork;
       breakdown.otMinutes1_5x = otMinutes;
       breakdown.otHours1_5x = otMinutes / 60;
     } else {
-      // Still within first 10 hours - all goes to fixed OT (not paid)
       breakdown.fixedOTMinutes = remainingMinutes;
       breakdown.fixedOTHours = remainingMinutes / 60;
     }
   } else if (dayType === 'weekend') {
-    // Weekends: First 6 hours = 1.0x, After 6 hours = 1.5x
-    // Calculate cumulative hours including previous sessions today
-    const totalCumulativeMinutes = cumulativeMinutesWorkedToday + remainingMinutes;
-    
-    if (cumulativeMinutesWorkedToday >= WEEKEND_FIRST_TIER_MINUTES) {
-      // Already worked 6+ hours today - all current session at 1.5x
-      breakdown.otMinutes1_5x = remainingMinutes;
-      breakdown.otHours1_5x = remainingMinutes / 60;
-    } else if (totalCumulativeMinutes > WEEKEND_FIRST_TIER_MINUTES) {
-      // Current session crosses the 6-hour threshold
-      const minutesAt1x = WEEKEND_FIRST_TIER_MINUTES - cumulativeMinutesWorkedToday;
-      breakdown.otMinutes1x = minutesAt1x;
-      breakdown.otHours1x = minutesAt1x / 60;
-      
-      const otMinutes = remainingMinutes - minutesAt1x;
-      breakdown.otMinutes1_5x = otMinutes;
-      breakdown.otHours1_5x = otMinutes / 60;
-    } else {
-      // Still within first 6 hours - all at 1.0x
-      breakdown.otMinutes1x = remainingMinutes;
-      breakdown.otHours1x = remainingMinutes / 60;
-    }
+    // Weekends: all overtime at 1.5x
+    breakdown.otMinutes1_5x = remainingMinutes;
+    breakdown.otHours1_5x = remainingMinutes / 60;
   } else if (dayType === 'public_holiday') {
     // Public Holidays: First 9 hours = 2.0x, After 9 hours = 3.0x
     // Calculate cumulative hours including previous sessions today
@@ -507,7 +479,6 @@ export const OT_CONSTANTS = {
   BLOCK_MINUTES,
   MEAL_ALLOWANCE,
   WEEKDAY_FIXED_OT_MINUTES,
-  WEEKEND_FIRST_TIER_MINUTES,
   PUBLIC_HOLIDAY_FIRST_TIER_MINUTES,
   RATE_1X,
   RATE_1_5X,

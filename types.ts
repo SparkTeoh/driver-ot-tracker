@@ -32,13 +32,13 @@ export interface OTCalculationBreakdown {
   duration: number; // Total minutes worked
   dayType: DayType;
   
-  // Weekday breakdown
-  fixedOTHours: number; // First 10 hours (weekdays) - counted but not paid
+  // Weekday/weekend breakdown
+  fixedOTHours: number; // Legacy field kept for backward compatibility (not used)
   fixedOTMinutes: number;
   
   // OT breakdown by rate
-  otHours1x: number; // Weekend first 6 hours at 1.0x
-  otHours1_5x: number; // Weekday after 10h, Weekend after 6h at 1.5x
+  otHours1x: number; // Legacy field kept for backward compatibility (not used)
+  otHours1_5x: number; // Weekday and weekend overtime at 1.5x
   otHours2x: number; // Public holiday first 9 hours at 2.0x
   otHours3x: number; // Public holiday after 9 hours at 3.0x
   
@@ -62,11 +62,11 @@ export interface OTCalculationBreakdown {
 }
 
 export interface MonthlySummary {
-  basicSalary: number; // RM 3,200
-  fixedOTAllowance: number; // RM 440
+  basicSalary: number; // RM 3,000
+  fixedOTAllowance: number; // RM 0
   totalOTPay: number;
-  foodAllowance: number; // RM 250 (fixed)
-  fullAttendanceReward: number; // RM 300 (full if no leave)
+  foodAllowance: number; // RM 0 (fixed)
+  fullAttendanceReward: number; // RM 300 attendance allowance (full if no leave)
   outstationMealAllowances: number; // Outstation overnight meal allowances
   grandTotal: number;
 }

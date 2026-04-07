@@ -9,9 +9,9 @@ interface MonthlyDashboardProps {
   onBack: () => void;
 }
 
-const BASIC_SALARY = 3200;
-const FIXED_OT_ALLOWANCE = 440;
-const FOOD_ALLOWANCE = 250;
+const BASIC_SALARY = 3000;
+const FIXED_OT_ALLOWANCE = 0;
+const FOOD_ALLOWANCE = 0;
 const FULL_ATTENDANCE_REWARD = 300;
 const MEAL_ALLOWANCE = 30; // Per outstation (for outstation overnight)
 
@@ -344,7 +344,7 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
             <h3 className="text-2xl font-bold">RM {summary.basicSalary.toFixed(2)}</h3>
           </div>
 
-          {/* Fixed OT Allowance */}
+          {/* Fixed OT Allowance (not used for current package) */}
           <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-5 text-white shadow-lg">
             <div className="flex items-center justify-between mb-2">
               <TrendingUp size={24} className="opacity-80" />
@@ -362,29 +362,27 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
             <h3 className="text-2xl font-bold">RM {summary.totalOTPay.toFixed(2)}</h3>
           </div>
 
-          {/* Food Allowance */}
+          {/* Outstation Meal Allowance */}
           <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl p-5 text-white shadow-lg">
             <div className="flex items-center justify-between mb-2">
               <FileText size={24} className="opacity-80" />
             </div>
-            <p className="text-amber-100 text-sm font-medium mb-1">Food Allowance</p>
-            <h3 className="text-2xl font-bold">RM {(summary.foodAllowance + summary.outstationMealAllowances).toFixed(2)}</h3>
-            {summary.outstationMealAllowances > 0 && (
-              <p className="text-xs text-amber-100 mt-1">
-                Base: RM {summary.foodAllowance.toFixed(2)} | Outstation: RM {summary.outstationMealAllowances.toFixed(2)}
-              </p>
-            )}
+            <p className="text-amber-100 text-sm font-medium mb-1">Outstation Meal Allowance</p>
+            <h3 className="text-2xl font-bold">RM {summary.outstationMealAllowances.toFixed(2)}</h3>
+            <p className="text-xs text-amber-100 mt-1">
+              RM 30 per outstation trip
+            </p>
           </div>
 
-          {/* Full Attendance Reward */}
+          {/* Attendance Allowance */}
           <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-xl p-5 text-white shadow-lg">
             <div className="flex items-center justify-between mb-2">
               <FileText size={24} className="opacity-80" />
             </div>
-            <p className="text-pink-100 text-sm font-medium mb-1">Full Attendance Reward</p>
+            <p className="text-pink-100 text-sm font-medium mb-1">Attendance Allowance</p>
             <h3 className="text-2xl font-bold">RM {summary.fullAttendanceReward.toFixed(2)}</h3>
             <p className="text-xs text-pink-100 mt-1">
-              Full if no Annual, Emergency, or Medical Leave
+              Full amount if no Annual, Emergency, or Medical Leave
             </p>
           </div>
 
