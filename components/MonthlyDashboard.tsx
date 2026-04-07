@@ -59,7 +59,7 @@ const truncateText = (text: string, maxLength: number = 40): string => {
 const fetchMonthlyLeaves = async (userId: string, year: number, month: number): Promise<any[]> => {
   // TODO: Implement leave fetching from database
   // This should query a 'leaves' or 'absences' table
-  // Expected structure: { date: string, leave_type: 'medical' | 'annual' | 'emergency' }
+  // Expected structure: { date: string, leave_type: 'medical' | 'annual' | 'emergency' | 'late' }
   return [];
 };
 
@@ -149,28 +149,33 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
       }
     });
 
-    // Calculate Full Attendance Reward
-    // Fixed base: RM 300, get full if no Annual, Emergency, or Medical Leave
+    // Calculate Attendance Allowance
+    // Base RM300 with deductions:
+    // - Annual/Medical/Late: RM100 per day (up to RM300)
+    // - Emergency leave: RM300 per day (full deduction)
     let fullAttendanceReward = FULL_ATTENDANCE_REWARD;
     
     // Fetch leave records for this month
     const leaves = await fetchMonthlyLeaves(userId, year, month);
     
-    // Check if any leave was taken - if yes, set reward to 0
-    const hasLeave = leaves.some((leave) => {
+    const annualMedicalLateDays = leaves.filter((leave) => {
       const leaveType = leave.leave_type?.toLowerCase();
-      return leaveType === 'medical' || 
-             leaveType === 'medical_leave' ||
-             leaveType === 'annual' || 
-             leaveType === 'annual_leave' ||
-             leaveType === 'emergency' || 
-             leaveType === 'emergency_leave';
-    });
-    
-    // Get full reward only if no leave was taken
-    if (hasLeave) {
-      fullAttendanceReward = 0;
-    }
+      return (
+        leaveType === 'medical' ||
+        leaveType === 'medical_leave' ||
+        leaveType === 'annual' ||
+        leaveType === 'annual_leave' ||
+        leaveType === 'late'
+      );
+    }).length;
+
+    const emergencyDays = leaves.filter((leave) => {
+      const leaveType = leave.leave_type?.toLowerCase();
+      return leaveType === 'emergency' || leaveType === 'emergency_leave';
+    }).length;
+
+    const attendanceDeduction = Math.min(300, annualMedicalLateDays * 100 + emergencyDays * 300);
+    fullAttendanceReward = Math.max(0, FULL_ATTENDANCE_REWARD - attendanceDeduction);
 
     const grandTotal = BASIC_SALARY +
                        totalOTPay +
@@ -368,7 +373,7 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
             <p className="text-pink-100 text-sm font-medium mb-1">Attendance Allowance</p>
             <h3 className="text-2xl font-bold">RM {summary.fullAttendanceReward.toFixed(2)}</h3>
             <p className="text-xs text-pink-100 mt-1">
-              Full amount if no Annual, Emergency, or Medical Leave
+              Deductions: Annual/Medical/Late -RM100/day, Emergency -RM300/day
             </p>
           </div>
 

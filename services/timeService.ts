@@ -125,10 +125,18 @@ export const getFullLocationAddress = async (lat: number, lng: number): Promise<
 };
 
 /**
- * Round minutes to 30-minute blocks (ceiling)
+ * Round OT minutes to 30-minute blocks with 7-minute grace.
+ * - Remainder 0-7 mins: do not round up
+ * - Remainder 8-29 mins: round up to next 30-min block
  */
 const roundToBlocks = (minutes: number): number => {
-  return Math.ceil(minutes / BLOCK_MINUTES) * BLOCK_MINUTES;
+  if (minutes <= 0) return 0;
+
+  const fullBlocks = Math.floor(minutes / BLOCK_MINUTES);
+  const remainder = minutes % BLOCK_MINUTES;
+  const extraBlock = remainder > 7 ? 1 : 0;
+
+  return (fullBlocks + extraBlock) * BLOCK_MINUTES;
 };
 
 /**

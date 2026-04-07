@@ -105,10 +105,14 @@ const WorkLogDetail: React.FC<WorkLogDetailProps> = ({ workLog, onClose }) => {
     return hours.replace(/\.?0+$/, ''); // Remove trailing zeros
   };
 
-  // Round minutes to 30-minute blocks (ceiling) - same as calculation logic
+  // Round minutes to 30-minute blocks with 7-minute grace - same as calculation logic
   const roundToBlocks = (minutes: number): number => {
     const BLOCK_MINUTES = 30;
-    return Math.ceil(minutes / BLOCK_MINUTES) * BLOCK_MINUTES;
+    if (minutes <= 0) return 0;
+    const fullBlocks = Math.floor(minutes / BLOCK_MINUTES);
+    const remainder = minutes % BLOCK_MINUTES;
+    const extraBlock = remainder > 7 ? 1 : 0;
+    return (fullBlocks + extraBlock) * BLOCK_MINUTES;
   };
 
   // Format rounded hours for display (shows the rounded hours used in calculation)
