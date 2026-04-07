@@ -9,7 +9,8 @@ import {
   fetchMonthlySummary,
   fetchRecentLogs,
   getDayType,
-  getFullLocationAddress
+  getFullLocationAddress,
+  OT_CONSTANTS,
 } from '../services/timeService';
 import { WorkLog } from '../types';
 import Timer from './Timer';
@@ -160,6 +161,7 @@ const Dashboard: React.FC<DashboardProps> = ({ session, onNavigateToMonthly }) =
   }
 
   const currentDate = format(new Date(), 'EEEE, d MMM yyyy');
+  const weekdayWeekendRatePer30Min = (OT_CONSTANTS.BASE_HOURLY_RATE * OT_CONSTANTS.RATE_1_5X) / 2;
 
   return (
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto shadow-xl border-x border-gray-200 flex flex-col">
@@ -319,7 +321,9 @@ const Dashboard: React.FC<DashboardProps> = ({ session, onNavigateToMonthly }) =
           </div>
           <p className="text-indigo-200 text-sm font-medium mb-1">Current Month OT Earnings</p>
           <h3 className="text-4xl font-bold">RM {monthlyTotal.toFixed(2)}</h3>
-          <p className="text-xs text-indigo-300 mt-2">Rate: RM 11.50 / 30 mins block</p>
+          <p className="text-xs text-indigo-300 mt-2">
+            Rate: RM {weekdayWeekendRatePer30Min.toFixed(2)} / 30 mins block
+          </p>
         </div>
 
         {/* Recent Activity */}

@@ -8,7 +8,8 @@ import { WorkLog, OTCalculationBreakdown, DayType } from '../types';
 const BASIC_SALARY = 3000;
 const WORK_DAYS_PER_MONTH = 26;
 const HOURS_PER_DAY = 8;
-const BASE_HOURLY_RATE = BASIC_SALARY / WORK_DAYS_PER_MONTH / HOURS_PER_DAY; // RM 14.42/hour
+// Package-specific base hourly rate agreed by user.
+const BASE_HOURLY_RATE = 14.4;
 
 const BLOCK_MINUTES = 30; // Minimum block for OT calculation
 
@@ -419,7 +420,7 @@ export const fetchMonthlySummary = async (userId: string) => {
 
   const { data, error } = await supabase
     .from('work_logs')
-    .select('overtime_amount')
+    .select('id, clock_in, clock_out, is_outstation, is_public_holiday, duration_minutes')
     .eq('user_id', userId)
     .gte('clock_in', start)
     .lte('clock_in', end)
@@ -427,7 +428,32 @@ export const fetchMonthlySummary = async (userId: string) => {
 
   if (error) throw error;
 
-  const total = data?.reduce((sum, log) => sum + (Number(log.overtime_amount) || 0), 0) || 0;
+  if (!data || data.length === 0) return 0;
+
+  // Recalculate OT using current rules and cumulative-per-day logic.
+  const sortedLogs = [...data].sort(
+    (a, b) => new Date(a.clock_in).getTime() - new Date(b.clock_in).getTime()
+  );
+  const cumulativeByDate = new Map<string, number>();
+
+  const total = sortedLogs.reduce((sum, log) => {
+    const clockIn = new Date(log.clock_in);
+    const clockOut = new Date(log.clock_out);
+    const dateKey = format(clockIn, 'yyyy-MM-dd');
+    const previousMinutes = cumulativeByDate.get(dateKey) || 0;
+
+    const breakdown = calculateOvertime(
+      clockIn,
+      clockOut,
+      Boolean(log.is_outstation),
+      Boolean(log.is_public_holiday),
+      previousMinutes
+    );
+
+    cumulativeByDate.set(dateKey, previousMinutes + (log.duration_minutes || 0));
+    return sum + breakdown.totalOTAmount;
+  }, 0);
+
   return total;
 };
 
@@ -444,7 +470,48 @@ export const fetchRecentLogs = async (userId: string): Promise<WorkLog[]> => {
     .limit(5);
 
   if (error) throw error;
-  return data || [];
+  if (!data || data.length === 0) return [];
+
+  // Recalculate displayed OT per entry so recent activity reflects current rules.
+  const recalculatedLogs = await Promise.all(
+    data.map(async (log) => {
+      const clockIn = new Date(log.clock_in);
+      const clockOut = log.clock_out ? new Date(log.clock_out) : null;
+      if (!clockOut) return log;
+
+      const dateStr = format(clockIn, 'yyyy-MM-dd');
+      const dayStart = new Date(`${dateStr}T00:00:00`);
+      const dayEnd = new Date(`${dateStr}T23:59:59`);
+
+      const { data: sameDayLogs } = await supabase
+        .from('work_logs')
+        .select('duration_minutes, clock_in')
+        .eq('user_id', userId)
+        .not('clock_out', 'is', null)
+        .neq('id', log.id)
+        .gte('clock_in', dayStart.toISOString())
+        .lte('clock_in', dayEnd.toISOString())
+        .lt('clock_in', log.clock_in);
+
+      const cumulativeMinutes =
+        sameDayLogs?.reduce((sum, item) => sum + (item.duration_minutes || 0), 0) || 0;
+
+      const breakdown = calculateOvertime(
+        clockIn,
+        clockOut,
+        Boolean(log.is_outstation),
+        Boolean(log.is_public_holiday),
+        cumulativeMinutes
+      );
+
+      return {
+        ...log,
+        overtime_amount: breakdown.totalOTAmount,
+      };
+    })
+  );
+
+  return recalculatedLogs;
 };
 
 /**

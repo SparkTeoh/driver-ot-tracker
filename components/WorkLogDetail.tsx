@@ -245,7 +245,7 @@ const WorkLogDetail: React.FC<WorkLogDetailProps> = ({ workLog, onClose }) => {
                         <span className="text-gray-600">
                           Standard Work (First {Math.round(breakdown.fixedOTHours)} hrs):
                         </span>
-                        <span className="font-medium text-gray-500">Covered by Allowance</span>
+                        <span className="font-medium text-gray-500">No OT pay</span>
                       </div>
                     )}
                     {breakdown.otHours1_5x > 0 && (
