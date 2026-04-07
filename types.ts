@@ -63,7 +63,6 @@ export interface OTCalculationBreakdown {
 
 export interface MonthlySummary {
   basicSalary: number; // RM 3,000
-  fixedOTAllowance: number; // RM 0
   totalOTPay: number;
   foodAllowance: number; // RM 0 (fixed)
   fullAttendanceReward: number; // RM 300 attendance allowance (full if no leave)

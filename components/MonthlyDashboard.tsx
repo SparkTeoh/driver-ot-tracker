@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { format, startOfMonth, endOfMonth, getMonth, getYear } from 'date-fns';
-import { ArrowLeft, Calendar, DollarSign, TrendingUp, FileText, MapPin, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Calendar, DollarSign, FileText, MapPin, AlertCircle } from 'lucide-react';
 import { WorkLog, MonthlySummary, MonthlyLogRecord, DayType } from '../types';
 import { fetchMonthlyLogs, calculateOvertime, getDayType } from '../services/timeService';
 
@@ -10,7 +10,6 @@ interface MonthlyDashboardProps {
 }
 
 const BASIC_SALARY = 3000;
-const FIXED_OT_ALLOWANCE = 0;
 const FOOD_ALLOWANCE = 0;
 const FULL_ATTENDANCE_REWARD = 300;
 const MEAL_ALLOWANCE = 30; // Per outstation (for outstation overnight)
@@ -71,7 +70,6 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
   const [monthlyLogs, setMonthlyLogs] = useState<MonthlyLogRecord[]>([]);
   const [summary, setSummary] = useState<MonthlySummary>({
     basicSalary: BASIC_SALARY,
-    fixedOTAllowance: FIXED_OT_ALLOWANCE,
     totalOTPay: 0,
     foodAllowance: FOOD_ALLOWANCE,
     fullAttendanceReward: 0,
@@ -174,16 +172,14 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
       fullAttendanceReward = 0;
     }
 
-    const grandTotal = BASIC_SALARY + 
-                       FIXED_OT_ALLOWANCE + 
-                       totalOTPay + 
+    const grandTotal = BASIC_SALARY +
+                       totalOTPay +
                        FOOD_ALLOWANCE + 
                        fullAttendanceReward + 
                        outstationMealAllowances;
 
     return {
       basicSalary: BASIC_SALARY,
-      fixedOTAllowance: FIXED_OT_ALLOWANCE,
       totalOTPay,
       foodAllowance: FOOD_ALLOWANCE,
       fullAttendanceReward,
@@ -258,12 +254,11 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
       setMonthlyLogs([]);
       setSummary({
         basicSalary: BASIC_SALARY,
-        fixedOTAllowance: FIXED_OT_ALLOWANCE,
         totalOTPay: 0,
         foodAllowance: FOOD_ALLOWANCE,
         fullAttendanceReward: 0,
         outstationMealAllowances: 0,
-        grandTotal: BASIC_SALARY + FIXED_OT_ALLOWANCE + FOOD_ALLOWANCE,
+        grandTotal: BASIC_SALARY + FOOD_ALLOWANCE,
       });
     } finally {
       setLoading(false);
@@ -334,7 +329,7 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
         )}
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {/* Basic Salary */}
           <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-5 text-white shadow-lg">
             <div className="flex items-center justify-between mb-2">
@@ -342,15 +337,6 @@ const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({ session, onBack }) 
             </div>
             <p className="text-blue-100 text-sm font-medium mb-1">Basic Salary</p>
             <h3 className="text-2xl font-bold">RM {summary.basicSalary.toFixed(2)}</h3>
-          </div>
-
-          {/* Fixed OT Allowance (not used for current package) */}
-          <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-5 text-white shadow-lg">
-            <div className="flex items-center justify-between mb-2">
-              <TrendingUp size={24} className="opacity-80" />
-            </div>
-            <p className="text-purple-100 text-sm font-medium mb-1">Fixed OT Allowance</p>
-            <h3 className="text-2xl font-bold">RM {summary.fixedOTAllowance.toFixed(2)}</h3>
           </div>
 
           {/* Total OT Pay */}
